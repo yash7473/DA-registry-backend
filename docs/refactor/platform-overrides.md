@@ -17,15 +17,16 @@ table; when an upstream fix lands, delete the entry and its code.
 
 ## 1. Temporary overrides (kept on the user's decision of 29 Oct 2026)
 
-All four live in `register_domain/temporary_platform_overrides.py`, installed by one call in `app.py` (the worker engine also on the Celery `worker_process_init` signal). Each has a docstring block with the bug, the platform version checked (1.2.2-rc.557), what breaks without it and "remove when OpenG2P fixes it". None of these classes is a registered component and none of the behaviours is a setting on rc.557, so there is no subclass or configuration alternative. The fourth, the DataPolicyMiddleware own-record policy, is row D3 below. (should go upstream, then be deleted)
+All three live in `register_domain/temporary_platform_overrides.py`, installed by one call in `app.py` (the worker engine also on the Celery `worker_process_init` signal). Each has a docstring block with the bug, the platform version checked (1.2.2-rc.557), what breaks without it and "remove when OpenG2P fixes it". None of these classes is a registered component and none of the behaviours is a setting on rc.557, so there is no subclass or configuration alternative. The fourth, the DataPolicyMiddleware own-record policy, is row D3 below. (should go upstream, then be deleted)
 
 The partner-API ingest reply (a `datetime` in the header made every `POST /partner/ingest_data` answer 500) is no longer worked around in code: every data model in `meta_data/data-models/data_models.sql` carries the DCI response template, which makes the platform serialise the reply.
+
+Removed 29 Oct 2026: the FilterBuilder override for `"true"`/`"false"` strings. No DA filter is boolean (the register metadata and the platform define none), so it never applied.
 
 | # | Where | Platform anchor | What it does | Why | Upstream status |
 |---|---|---|---|---|---|
 | P1 | `register_domain/temporary_platform_overrides.py` `install_scoped_permission_lookup` | `iam_core...ResolvePermissionMiddleware.dispatch` and `_fetch_permissions_for_roles` (wrapped) | resolves a user's permissions for this registry's own IAM application only (`/user-access/get_application_permissions_for_user?application_mnemonic=<client>`) | IAM matched role names across every registry on the shared Keycloak, so a farmer-registry role could grant DA permissions and vice versa | not reported yet |
 | P2 | `register_domain/temporary_platform_overrides.py` `install_worker_null_pool` (installed on the Celery `worker_process_init` signal in `__init__.py`) | `openg2p_registry_celery_worker.engine.Engine.get_async_engine` (replaced) | builds the worker's async engine with `NullPool` | asyncpg "Task attached to a different loop" in forked worker processes; the error still shows on first attempts on rc.557 (rows are retried and complete), so the fix is partial (finding B3 in `pr8-validation-da.md`) | not reported yet |
-| P3 | `register_domain/temporary_platform_overrides.py` `install_filter_builder_booleans` | `openg2p_registry_core.services.filter_builder.FilterBuilder._validate_value` and `_build_field_conditions` (wrapped) | accepts `"true"` / `"false"` strings for boolean filters | the staff UI sends booleans as strings and the platform rejects them | not reported yet |
 
 ## 2. DA behaviour the platform has no hook for (overrides by design; candidates for platform features)
 

@@ -8,6 +8,10 @@ are untouched. Every override is idempotent and skips cleanly when the platform
 package it targets is not in the process. Remove each one when OpenG2P fixes
 it; docs/refactor/platform-overrides.md lists them with the re-check steps.
 
+A fourth override (FilterBuilder accepting "true"/"false" strings) was removed
+on 29 Oct 2026: no DA filter is boolean (register metadata and the platform
+define none), so it never applied.
+
 Everything else this extension changes in the platform goes through the
 component registry (subclass registered ahead of the platform service); this
 module is the only place that reassigns platform methods.
@@ -35,17 +39,7 @@ module is the only place that reassigns platform methods.
    Without it: imports stall or fail more often on that error.
    Remove when OpenG2P fixes it.
 
-3. FilterBuilder boolean strings - install_filter_builder_booleans
-   Bug: the staff UI sends boolean filter values as the strings "true" and
-   "false"; FilterBuilder validates and compares real booleans only, so the
-   filter is rejected or ignored. FilterBuilder is a plain class created in
-   place by the services, not a component.
-   Platform version checked: 1.2.2-rc.557.
-   Without it: boolean filters in the staff UI (for example record status
-   flags) do not filter.
-   Remove when OpenG2P fixes it.
-
-4. DataPolicyMiddleware own-record policy - install_own_record_data_policy
+3. DataPolicyMiddleware own-record policy - install_own_record_data_policy
    Gap: the platform's data policies are role-based lists; there is no
    per-user, claim-based policy. For a Development Agent (token claim `da_id`,
    only the Data Editor role) the override replaces the request's policies with
@@ -162,51 +156,7 @@ def install_worker_null_pool() -> bool:
     return True
 
 
-# --------------------------------------------------------- 3. filter builder
-
-
-def install_filter_builder_booleans() -> bool:
-    try:
-        from openg2p_registry_core.services.filter_builder import FilterBuilder
-        from sqlalchemy import Boolean
-    except ImportError:
-        return False
-    if getattr(FilterBuilder._build_field_conditions, _INSTALLED, False):
-        return True
-
-    original_build_field_conditions = FilterBuilder._build_field_conditions
-    original_validate_value = FilterBuilder._validate_value
-
-    def _to_bool(value):
-        if isinstance(value, str) and value.lower() == "true":
-            return True
-        if isinstance(value, str) and value.lower() == "false":
-            return False
-        return value
-
-    def _validate_value(self, field_config, operator, value):
-        if field_config.get("filter_type") == "boolean":
-            if isinstance(value, str) and value.lower() in ("true", "false"):
-                return
-        return original_validate_value(self, field_config, operator, value)
-
-    def _build_field_conditions(self, column, field_name, operators, field_config):
-        is_bool_col = hasattr(column, "type") and isinstance(column.type, Boolean)
-        if is_bool_col and isinstance(operators, dict):
-            operators = {
-                op: ([_to_bool(v) for v in val] if isinstance(val, list) else _to_bool(val))
-                for op, val in operators.items()
-            }
-        return original_build_field_conditions(self, column, field_name, operators, field_config)
-
-    setattr(_build_field_conditions, _INSTALLED, True)
-    FilterBuilder._validate_value = _validate_value
-    FilterBuilder._build_field_conditions = _build_field_conditions
-    _logger.info("FilterBuilder accepts boolean filter strings (platform workaround)")
-    return True
-
-
-# ------------------------------------------------- 4. own-record data policy
+# ------------------------------------------------- 3. own-record data policy
 
 
 def install_own_record_data_policy() -> bool:
@@ -240,5 +190,4 @@ def install_own_record_data_policy() -> bool:
 def install_temporary_platform_overrides() -> None:
     install_scoped_permission_lookup()
     install_worker_null_pool()
-    install_filter_builder_booleans()
     install_own_record_data_policy()

@@ -87,18 +87,6 @@ def test_worker_engine_uses_null_pool(monkeypatch):
     assert seen["poolclass"] is NullPool
 
 
-def test_filter_builder_accepts_boolean_strings():
-    pytest.importorskip("openg2p_registry_core.services.filter_builder")
-    from openg2p_registry_core.services.filter_builder import FilterBuilder
-
-    assert po.install_filter_builder_booleans() is True
-    assert po.install_filter_builder_booleans() is True  # idempotent
-    builder = FilterBuilder([])
-    # no exception for "true"/"false" on a boolean field
-    assert builder._validate_value({"filter_type": "boolean"}, "eq", "true") is None
-    assert builder._validate_value({"filter_type": "boolean"}, "eq", "FALSE") is None
-
-
 def test_data_policy_middleware_applies_the_own_record_policy():
     pytest.importorskip("iam_core")
     from iam_core.user_auth.middleware.data_policy import DataPolicyMiddleware

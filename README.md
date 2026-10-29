@@ -198,8 +198,7 @@ registries. Keep the component Dockerfiles and chart dependency in step:
 
 When the version moves, re-check:
 
-- `da-extension/.../register_domain/temporary_platform_overrides.py`: the four
+- `da-extension/.../register_domain/temporary_platform_overrides.py`: the three
   temporary in-process workarounds (IAM permission lookup across registries,
-  worker NullPool, FilterBuilder boolean strings, DataPolicyMiddleware
-  own-record policy); the platform image is not modified. Drop each one once
+  worker NullPool, DataPolicyMiddleware own-record policy); the platform image is not modified. Drop each one once
   OpenG2P fixes it in the pinned platform image.
