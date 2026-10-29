@@ -132,12 +132,19 @@ usually within a minute or two.
 
 ```json
 {
-  "response_header": {"response_status": "SUCCESS", "response_error_code": "", "response_timestamp": "2026-10-06T03:16:28.698394"},
-  "response_body": {"response_payload": {"correlation_id": "aaac69f6d383456bbd43cd682e85cd31"}}
+  "message": {
+    "ack_status": "ACK",
+    "timestamp": "2026-10-29 10:46:07.338021",
+    "error": {"code": "", "message": ""},
+    "correlation_id": "17fcd9871f1a4bb89467e5dff4e9a656"
+  }
 }
 ```
 
-Keep `correlation_id` with the DA in DA Services.
+The reply uses the DCI acknowledgement shape (as every partner API reply does
+on registry-platform rc.557). `ack_status` is `ACK` when the request was
+accepted; anything else carries the reason in `error`. Keep
+`message.correlation_id` with the DA in DA Services.
 
 ### What happens next
 
