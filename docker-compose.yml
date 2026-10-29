@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: da-registry-minio
     command: server /data --address ":9010" --console-address ":9011"
     # Presigned document URLs (attachments) are
@@ -94,7 +94,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: da-registry-minio-init
     depends_on:
       minio:
