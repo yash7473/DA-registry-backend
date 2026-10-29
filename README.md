@@ -17,7 +17,7 @@ follows the same build model as the farmer registry.
 | `docker/*/Dockerfile` | Thin native registry-platform images for the DA APIs, worker/beat, UI and seed job |
 | `ui/staff-ui/` | Pinned upstream Staff UI materialization with an empty DA override layer for future UI additions |
 | `docker/db-seed/` | db-seed image: the extension's configuration only (metadata, AWE seed, templates) |
-| `docker/local-dev/data-loaders/` | Local-only loaders for code lists and sample DAs (not a deployable image; they move to openg2p-data, see `docs/refactor/moves-to-openg2p-data/`) |
+| `docker/local-dev/data-loaders/` | Local-only loader for the code lists (not a deployable image; they move to openg2p-data, see `docs/refactor/moves-to-openg2p-data/`) |
 | `docker/local-dev/` | Config for the local stack (Keycloak, IAM, AWE, ID generator, Postgres, geo seed) |
 | `import-templates/` | Blank CSV and Excel templates for bulk import |
 | `docker-compose.yml` | Self-contained local stack |
@@ -127,27 +127,30 @@ Seeding, in order: the geo-seed job loads the Ethiopia geo hierarchy into
 Master Data; the codelist-seed job loads the dropdown code lists from the
 openg2p-data pack (`packs/ETH-OAN`: `GENDER`, `MARITAL_STATUS`, `PREFIX` and the
 `agriculture` domain's `DA_*` lists) into Master Data; db-seed loads the DA
-metadata and AWE seed (configuration only), then the sample-data job loads the
-pack's nine sample DAs (`samples/development_agents.json`; skip it with
-`LOAD_SAMPLE_DATA=false`). All sample and reference data comes from the COSS
-fork of [openg2p-data](https://github.com/Centre-for-Open-Societal-Systems/openg2p-data);
-the two local-only jobs (`docker/local-dev/data-loaders`) clone it when they
-are built (`OPENG2P_DATA_REF`, a commit SHA pinned in the Dockerfile and compose file, never a branch) and are not part of any
-deployable image. Nothing is generated or hardcoded in this repo. No real
-personal data is used. To seed from a local openg2p-data checkout (for example
-while a data PR is open), point the jobs at it:
+metadata and AWE seed and, with `LOAD_SAMPLE_DATA=true` (default locally),
+submits the pack's sample DAs (`samples/development_agents.json`) through the
+intake API with a service account (`docker/db-seed/load_sample_data.py`). They
+wait in the approval queue like any web-form submission; re-running skips the
+ones already submitted. All sample and reference data comes from the COSS fork
+of [openg2p-data](https://github.com/Centre-for-Open-Societal-Systems/openg2p-data)
+at a pinned commit (`OPENG2P_DATA_REF`, a commit SHA in the Dockerfiles and the
+compose file, never a branch). Nothing is generated or hardcoded in this repo.
+No real personal data is used. To seed from a local openg2p-data checkout (for
+example while a data PR is open), point the jobs at it:
 
 ```bash
 OPENG2P_DATA_PATH=/path/to/openg2p-data OPENG2P_DATA_DIR=/openg2p-data-local \
   docker compose run --rm da-registry-codelist-seed && \
 OPENG2P_DATA_PATH=/path/to/openg2p-data OPENG2P_DATA_DIR=/openg2p-data-local \
-  docker compose run --rm da-registry-sample-data
+  docker compose run --rm da-registry-db-seed
 ```
 
 On a cluster the Master Data db-seed image (openg2p-data's
 `docker/master-data-db-seed`, `PACK_LOAD=codelists`, `PACK_DOMAINS=agriculture`)
-loads the lists; sample DAs are loaded from the same pack by openg2p-data's
-own tooling, not by the registry's db-seed image.
+loads the lists; with `dbSeed.loadSampleData=true` the registry's db-seed job
+submits the sample DAs with the settings the platform chart already gives it
+(`STAFF_*`, `MDS_*`); the registry's Keycloak client then needs the client role
+Intake Officer.
 
 Validation is metadata-driven: required fields are the form's `widget-required`
 flags (checked on section save and before a submission can be finalized), and
@@ -157,8 +160,7 @@ displays or translations through `code_lists.py`). Adding a value to a list
 or making a field optional is a change in openg2p-data / the register
 metadata, not in Python.
 
-Local-only settings in `docker-compose.yml`: Master Data is read from its
-database (`*_MASTER_DATA_READ_MODE=db`), and DCI search skips partner signature
+Local-only settings in `docker-compose.yml`: DCI search skips partner signature
 and consent checks (`REGISTRY_PARTNER_API_SIGNATURE_VALIDATION_ENABLED` /
 `..._CONSENT_ENFORCEMENT_ENABLED=false`) because the stack has no Partner
 Management or Consent Manager. Keep both checks on in deployments.
@@ -191,9 +193,9 @@ registries. Keep the component Dockerfiles and chart dependency in step:
   Master Data API with a client-credentials token (`*_MASTER_DATA_API_URL`, `_TOKEN_URL`,
   `_CLIENT_ID`, `_CLIENT_SECRET`; locally the `da-registry-backend` Keycloak client). Without
   it the staff form saves DAs with empty Region / Zone / Woreda / Kebele names. In Helm the
-  subchart sets these from `global.masterDataApiUrl` and `global.pmSeedClientId`; the DA
-  import enricher also reads the Master Data database, so the celery worker gets its
-  `*_MASTER_DATA_DB_*` settings in `values.yaml`.
+  subchart sets these from `global.masterDataApiUrl` and `global.authClientId`, the celery
+  worker included; the DA import enricher uses the same API, so no pod reads the Master
+  Data database.
 
 When the version moves, re-check:
 

@@ -2,10 +2,9 @@
 
 Which list a field uses comes from the register metadata: each dropdown widget
 names its Master Data attribute (widget-data-source.params.attribute_id), the
-same declaration the form reads its values from. The values come from Master
-Data: through its database when the worker has the master-data DB settings
-(REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_*, read mode "db", what the geo lookup
-uses), otherwise through its API with the worker's client credentials. Nothing
+same declaration the form reads its values from. The values come from the
+Master Data API (`/attributes/get_attribute_values`) with the worker's client
+credentials (master_data_api.py), never from its database. Nothing
 is listed here; a value added to the openg2p-data pack is accepted on the next
 import without a code change.
 
@@ -19,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -27,10 +25,11 @@ from typing import Any
 
 from openg2p_registry_core.services.g2p_attribute_value_validator import G2PAttributeValueValidator
 
+from . import master_data_api
+
 _logger = logging.getLogger("da-code-lists")
 
 DA_REGISTER_ID = "6f1c2d8e-4a7b-4c3e-9d2f-8b5a1e7c3f90"
-ENV_PREFIX = "REGISTRY_CELERY_WORKERS_MASTER_DATA_"
 CACHE_SECONDS = 300
 
 _lock = threading.Lock()
@@ -82,79 +81,11 @@ def field_attributes(session) -> tuple[dict[str, str], dict[str, str]]:
     return attributes, labels
 
 
-def _read_mode() -> str:
-    mode = (os.environ.get(ENV_PREFIX + "READ_MODE") or "").strip().lower()
-    if mode:
-        return mode
-    return "db" if os.environ.get(ENV_PREFIX + "DB_HOSTNAME") else "api"
-
-
-_i18n_column: bool | None = None
-
-
-def _has_i18n_column(cur) -> bool:
-    """Whether g2p_attribute_values has display_name_i18n (checked once)."""
-    global _i18n_column
-    if _i18n_column is None:
-        cur.execute(
-            "select 1 from information_schema.columns"
-            " where table_name = 'g2p_attribute_values' and column_name = 'display_name_i18n'"
-        )
-        _i18n_column = cur.fetchone() is not None
-    return _i18n_column
-
-
-def _values_from_db(attribute_id: str) -> dict[str, str]:
-    from .g2p_da_enricher_services import _MasterDataGeo
-
-    with _MasterDataGeo._connection().cursor() as cur:
-        # Translations are optional: Master Data versions differ in whether the
-        # legacy table carries them (MDM 1.1.0 does; the catalogue's seed files
-        # write only code and display). Match on code and display without them.
-        i18n = "display_name_i18n" if _has_i18n_column(cur) else "null"
-        cur.execute(
-            f"select value_id, value_code, value_display, {i18n} from g2p_attribute_values"
-            " where attribute_id = %s order by sort_order, value_id",
-            (attribute_id,),
-        )
-        rows = cur.fetchall()
-    out: dict[str, str] = {}
-    for value_id, value_code, display, i18n in rows:
-        out[value_id] = display or value_code or value_id
-        out.setdefault("__i18n__" + value_id, json.dumps(i18n or {}))
-        if value_code and value_code != value_id:
-            out.setdefault("__code__" + value_code, value_id)
-    return out
-
-
 def _values_from_api(attribute_id: str) -> dict[str, str]:
-    import httpx
-
-    base = (os.environ.get(ENV_PREFIX + "API_URL") or "").rstrip("/")
-    if not base:
-        raise RuntimeError("Master Data is not configured for the worker (no DB settings and no API URL)")
-    headers = {"Content-Type": "application/json"}
-    token_url = os.environ.get(ENV_PREFIX + "TOKEN_URL") or ""
-    client_id = os.environ.get(ENV_PREFIX + "CLIENT_ID") or ""
-    secret = os.environ.get(ENV_PREFIX + "CLIENT_SECRET") or ""
-    with httpx.Client(timeout=10.0) as client:
-        if token_url and client_id:
-            tok = client.post(token_url, data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret})
-            tok.raise_for_status()
-            headers["Authorization"] = "Bearer " + tok.json().get("access_token", "")
-        resp = client.post(
-            base + "/attributes/get_attribute_values",
-            headers=headers,
-            json={
-                "request_header": {"request_id": "da-code-lists", "request_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                   "sender_app_mnemonic": "da-registry", "sender_app_url": "http://localhost"},
-                "request_body": {"request_payload": {"attribute_id": attribute_id},
-                                 "pagination_request": {"current_page": 1, "page_size": 1000}},
-            },
-        )
-        resp.raise_for_status()
-        body = resp.json()
-    payload = (body.get("response_body") or {}).get("response_payload") or {}
+    payload = master_data_api.post(
+        "/attributes/get_attribute_values", {"attribute_id": attribute_id},
+        {"current_page": 1, "page_size": 1000},
+    ) or {}
     rows = payload.get("attribute_values") if isinstance(payload, dict) else payload
     out: dict[str, str] = {}
     for row in rows or []:
@@ -175,17 +106,16 @@ def attribute_values(attribute_id: str) -> dict[str, str]:
         hit = _value_cache.get(attribute_id)
         if hit and hit[0] > time.monotonic():
             return hit[1]
-    values = _values_from_db(attribute_id) if _read_mode() == "db" else _values_from_api(attribute_id)
+    values = _values_from_api(attribute_id)
     with _lock:
         _value_cache[attribute_id] = (time.monotonic() + CACHE_SECONDS, values)
     return values
 
 
 def invalidate() -> None:
-    global _field_cache, _i18n_column
+    global _field_cache
     with _lock:
         _field_cache = None
-        _i18n_column = None
         _value_cache.clear()
 
 

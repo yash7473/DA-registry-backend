@@ -10,8 +10,9 @@ runs before the Jinja template (import_file_to_openg2p_da.json.j2) and:
   form's dropdowns use (code_lists.py), so a value added in openg2p-data is accepted;
 - cleans what spreadsheets do to numbers (a lost leading 0 on a phone number,
   "4.0" for a month, "2024-01-05 00:00:00" for a date);
-- resolves Region / Zone / Woreda / Kebele names to the Master Data kebele and
-  builds the same geo hierarchy the intake form's geo widget saves.
+- resolves Region / Zone / Woreda / Kebele names to the Master Data kebele (through
+  the Master Data API) and builds the same geo hierarchy the intake form's geo
+  widget saves.
 
 A row that cannot be used raises ValueError with a readable message; the
 platform records it against that row and carries on with the rest of the file.
@@ -23,18 +24,16 @@ must stay a plain def.
 """
 
 import logging
-import os
 import re
 from datetime import datetime
 from typing import Dict
 
-import psycopg2
 from openg2p_registry_core.interfaces import G2PPayloadEnricherInterface
 from sqlalchemy.orm import Session
 
 from ...geo_codes import geo_codes
 from ...register_domain.services.required_fields import incomplete_reason, load_sections_sync
-from . import code_lists
+from . import code_lists, master_data_api
 
 _logger = logging.getLogger("g2p-payload-enricher-service")
 
@@ -128,90 +127,69 @@ def _date(value: str, label: str) -> str | None:
 
 
 class _MasterDataGeo:
-    """Resolves geo names against Master Data, reading its tables directly
-    with the worker's master-data DB settings (REGISTRY_CELERY_WORKERS_
-    MASTER_DATA_DB_*): the platform's geo service looks units up by id, and a
-    file names them."""
+    """Resolves a file's or message's location against Master Data, through its
+    API (master_data_api.geo_index: every unit of every level, cached): the
+    platform's geo service looks units up by id, and a file names them."""
 
-    _conn = None
+    @staticmethod
+    def _entry(node: dict) -> dict:
+        level = node["level_mnemonic"]
+        return {
+            "level": level, "level_id": node["level_id"], "level_mnemonic": level,
+            "level_value_id": node["level_value_id"], "level_value_mnemonic": node["level_value_mnemonic"],
+        }
+
+    _name_index: tuple[int, dict] | None = None
 
     @classmethod
-    def _connection(cls):
-        if cls._conn is None or cls._conn.closed:
-            prefix = "REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_"
-            cls._conn = psycopg2.connect(
-                host=os.environ.get(prefix + "HOSTNAME", "postgres"),
-                port=os.environ.get(prefix + "PORT", "5432"),
-                dbname=os.environ.get(prefix + "DBNAME", "master_data_db"),
-                user=os.environ.get(prefix + "USERNAME", "postgres"),
-                password=os.environ.get(prefix + "PASSWORD", ""),
-            )
-            cls._conn.autocommit = True
-        return cls._conn
+    def _by_name(cls, index: dict) -> dict:
+        """{(level, lower-case name): [nodes]}, rebuilt when the geo index is."""
+        if cls._name_index is None or cls._name_index[0] != id(index):
+            by_name: dict = {}
+            for node in index.values():
+                key = ((node["level_mnemonic"] or "").lower(), node["level_value_mnemonic"].strip().lower())
+                by_name.setdefault(key, []).append(node)
+            cls._name_index = (id(index), by_name)
+        return cls._name_index[1]
 
     @classmethod
     def resolve(cls, names: Dict[str, str]) -> dict:
         """names: {"region": .., "zone": .., "woreda": .., "kebele": ..}.
         Walks the chain so a kebele name repeated in another woreda never
         matches the wrong one."""
+        by_name = cls._by_name(master_data_api.geo_index())
         hierarchy, parent_id, trail = [], None, []
-        with cls._connection().cursor() as cur:
-            for level in GEO_LEVELS:
-                name = names[level]
-                cur.execute(
-                    """
-                    select v.level_value_id, v.level_value_mnemonic, l.level_id, l.level_mnemonic
-                    from g2p_geo_level_values v
-                    join g2p_geo_levels l on l.level_id = v.level_id
-                    where lower(l.level_mnemonic) = %s
-                      and (lower(v.level_value_mnemonic) = lower(%s) or lower(v.display_name) = lower(%s))
-                      and (%s::text is null or v.parent_level_value_id = %s)
-                    """,
-                    (level, name, name, parent_id, parent_id),
-                )
-                rows = cur.fetchall()
-                where = f" in {' / '.join(trail)}" if trail else ""
-                if not rows:
-                    raise ValueError(f"{level.title()} '{name}' not found{where}")
-                if len(rows) > 1:
-                    raise ValueError(f"{level.title()} '{name}' matches more than one place{where}")
-                value_id, mnemonic, level_id, level_mnemonic = rows[0]
-                hierarchy.append({
-                    "level": level_mnemonic, "level_id": level_id, "level_mnemonic": level_mnemonic,
-                    "level_value_id": value_id, "level_value_mnemonic": mnemonic,
-                })
-                trail.append(mnemonic)
-                parent_id = value_id
+        for level in GEO_LEVELS:
+            name = str(names[level] or "").strip().lower()
+            rows = [n for n in by_name.get((level, name), []) if parent_id is None or n["parent_level_value_id"] == parent_id]
+            where = f" in {' / '.join(trail)}" if trail else ""
+            if not rows:
+                raise ValueError(f"{level.title()} '{names[level]}' not found{where}")
+            if len(rows) > 1:
+                raise ValueError(f"{level.title()} '{names[level]}' matches more than one place{where}")
+            hierarchy.append(cls._entry(rows[0]))
+            trail.append(rows[0]["level_value_mnemonic"])
+            parent_id = rows[0]["level_value_id"]
         return {"hierarchy": hierarchy, "lowest_level_value_id": parent_id}
 
     @classmethod
     def resolve_by_id(cls, kebele_id: str) -> dict:
         """Hierarchy for a Master Data kebele id (e.g. kebele-ET010101101001),
         walking up its parents to the region."""
-        chain, current = [], kebele_id
-        with cls._connection().cursor() as cur:
-            while current:
-                cur.execute(
-                    """
-                    select v.level_value_id, v.level_value_mnemonic, v.parent_level_value_id,
-                           l.level_id, l.level_mnemonic
-                    from g2p_geo_level_values v
-                    join g2p_geo_levels l on l.level_id = v.level_id
-                    where v.level_value_id = %s
-                    """,
-                    (current,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    raise ValueError(f"Location '{current}' not found in Master Data")
-                value_id, mnemonic, parent, level_id, level_mnemonic = row
-                chain.append({
-                    "level": level_mnemonic, "level_id": level_id, "level_mnemonic": level_mnemonic,
-                    "level_value_id": value_id, "level_value_mnemonic": mnemonic,
-                })
-                current = parent
+        index = master_data_api.geo_index()
+        chain, current, seen = [], kebele_id, set()
+        while current and current not in seen:
+            seen.add(current)
+            node = index.get(current)
+            if node is None:
+                if not chain:
+                    raise ValueError(f"Location '{kebele_id}' not found in Master Data")
+                break
+            chain.append(cls._entry(node))
+            current = node["parent_level_value_id"]
         if (chain[0]["level_mnemonic"] or "").lower() != "kebele":
             raise ValueError(f"Location '{kebele_id}' is a {chain[0]['level_mnemonic']}, not a kebele")
+        chain = [c for c in chain if (c["level_mnemonic"] or "").lower() in GEO_LEVELS]
         chain.reverse()
         return {"hierarchy": chain, "lowest_level_value_id": kebele_id}
 

@@ -382,6 +382,9 @@ ensure_client "da-services-backend" \
   -s standardFlowEnabled=false \
   -s directAccessGrantsEnabled=false
 assign_client_role "service-account-da-services-backend" "da-registry-staff-portal" "Data Editor"
+# The db-seed sample loader submits the pack's sample DAs through the intake
+# API with the backend client's service account (docker/db-seed/load_sample_data.py).
+assign_client_role "service-account-da-registry-backend" "da-registry-staff-portal" "Intake Officer"
 
 # DA Services roles -> DA registry roles (docs/rbac-registry-roles.md).
 # A DA Services user is put in the group of their role; the group carries the

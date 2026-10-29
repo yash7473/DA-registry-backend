@@ -463,13 +463,6 @@ services:
       REGISTRY_STAFF_PORTAL_API_MINIO_SECURE: "false"
       REGISTRY_STAFF_PORTAL_API_MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-default-bucket}
       REGISTRY_STAFF_PORTAL_API_TEMPLATE_BUCKET_NAME: templates
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_DRIVER: postgresql+asyncpg
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_USERNAME: ${POSTGRES_SUPERUSER:-postgres}
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_HOSTNAME: postgres
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_PORT: 5432
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_DB_DBNAME: da_master_data_db
-      REGISTRY_STAFF_PORTAL_API_MASTER_DATA_READ_MODE: db
       # Coded values saved through the form / change requests are checked against the
       # Master Data lists the widgets declare (attribute_id), through the Master Data API.
       REGISTRY_STAFF_PORTAL_API_VALIDATE_ATTRIBUTE_VALUES: ${VALIDATE_ATTRIBUTE_VALUES:-true}
@@ -531,13 +524,6 @@ services:
       REGISTRY_PARTNER_API_DOCUMENT_STORAGE_BACKEND: minio
       REGISTRY_PARTNER_API_MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-default-bucket}
       REGISTRY_PARTNER_API_TEMPLATE_BUCKET_NAME: templates
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_DRIVER: postgresql+asyncpg
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_USERNAME: ${POSTGRES_SUPERUSER:-postgres}
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_HOSTNAME: postgres
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_PORT: 5432
-      REGISTRY_PARTNER_API_MASTER_DATA_DB_DBNAME: da_master_data_db
-      REGISTRY_PARTNER_API_MASTER_DATA_READ_MODE: db
       # Platform 1.2 reads geo hierarchy and code lists through the Master Data API.
       REGISTRY_PARTNER_API_MASTER_DATA_API_URL: http://da-master-data-api:8000
       REGISTRY_PARTNER_API_MASTER_DATA_TOKEN_URL: http://keycloak:8080/realms/staff/protocol/openid-connect/token
@@ -599,13 +585,6 @@ services:
       REGISTRY_CELERY_WORKERS_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-adminsecret}
       REGISTRY_CELERY_WORKERS_MINIO_SECURE: "false"
       REGISTRY_CELERY_WORKERS_MINIO_BUCKET_NAME: templates
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_DRIVER: postgresql+asyncpg
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_USERNAME: ${POSTGRES_SUPERUSER:-postgres}
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_HOSTNAME: postgres
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_PORT: 5432
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_DB_DBNAME: da_master_data_db
-      REGISTRY_CELERY_WORKERS_MASTER_DATA_READ_MODE: db
       # Platform 1.2 reads geo hierarchy and code lists through the Master Data API.
       REGISTRY_CELERY_WORKERS_MASTER_DATA_API_URL: http://da-master-data-api:8000
       REGISTRY_CELERY_WORKERS_MASTER_DATA_TOKEN_URL: http://keycloak:8080/realms/staff/protocol/openid-connect/token
@@ -645,7 +624,6 @@ services:
       REGISTRY_CELERY_BEAT_DB_HOSTNAME: postgres
       REGISTRY_CELERY_BEAT_DB_PORT: 5432
       REGISTRY_CELERY_BEAT_DB_DBNAME: da_registry_db
-      REGISTRY_CELERY_BEAT_MASTER_DATA_READ_MODE: db
       REGISTRY_CELERY_BEAT_CELERY_BROKER_URL: "redis://redis:6379/0"
       REGISTRY_CELERY_BEAT_CELERY_BACKEND_URL: "redis://redis:6379/0"
       REGISTRY_CELERY_BEAT_WORKER_QUEUE: da_registry_worker_queue
@@ -704,6 +682,8 @@ services:
     build:
       context: .
       dockerfile: docker/db-seed/Dockerfile
+      args:
+        OPENG2P_DATA_REF: ${OPENG2P_DATA_REF:-dc7e7bf69087b4684a3608fdd4bf98100aab77a8}
     image: da-registry-local/db-seed:dev
     container_name: da-registry-db-seed
     depends_on:
@@ -721,11 +701,6 @@ services:
       PGDATABASE: da_registry_db
       PGUSER: ${POSTGRES_SUPERUSER:-postgres}
       PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      MD_PGHOST: postgres
-      MD_PGPORT: 5432
-      MD_PGDATABASE: da_master_data_db
-      MD_PGUSER: ${POSTGRES_SUPERUSER:-postgres}
-      MD_PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
       AWE_DB_SEED_ENABLED: ${AWE_DB_SEED_ENABLED:-true}
       AWE_PGHOST: postgres
       AWE_PGPORT: 5432
@@ -735,9 +710,21 @@ services:
       AWE_CALLBACK_SECRET_ID: ${AWE_REGISTRY_CALLBACK_SECRET_ID:-00000000-0000-4000-8000-000000000001}
       AWE_CALLBACK_HMAC_SECRET: ${AWE_REGISTRY_CALLBACK_HMAC_SECRET:-dev-registry-awe-callback-secret}
       AWE_CALLBACK_CALLER_SERVICE: ${AWE_CALLBACK_CALLER_SERVICE:-registry}
-      # The image carries configuration only. Sample DAs are loaded by the
-      # local-only da-registry-sample-data job below, from openg2p-data.
-      LOAD_SAMPLE_DATA: "false"
+      # Sample DAs from openg2p-data, submitted through the intake API by the
+      # image's load_sample_data.py with the backend client's service account
+      # (role Intake Officer); they wait for the approvers. Same settings the
+      # platform chart's db-seed job sets.
+      LOAD_SAMPLE_DATA: ${LOAD_SAMPLE_DATA:-true}
+      STAFF_API_URL: http://da-registry-staff-api:8000
+      STAFF_TOKEN_URL: http://keycloak:8080/realms/staff/protocol/openid-connect/token
+      STAFF_CLIENT_ID: da-registry-backend
+      STAFF_CLIENT_SECRET: ${KEYCLOAK_DA_BACKEND_CLIENT_SECRET:-dev-da-backend-secret}
+      MDS_API_URL: http://da-master-data-api:8000
+      MDS_TOKEN_URL: http://keycloak:8080/realms/staff/protocol/openid-connect/token
+      MDS_CLIENT_ID: da-registry-backend
+      MDS_CLIENT_SECRET: ${KEYCLOAK_DA_BACKEND_CLIENT_SECRET:-dev-da-backend-secret}
+      OPENG2P_DATA_DIR: ${OPENG2P_DATA_DIR:-/openg2p-data}
+      PACK: ${OPENG2P_DATA_PACK:-ETH-OAN}
       LOAD_GEO_DATA: "false"  # geography comes from the da-registry-geo-seed job
       LOAD_IMAGES: ${LOAD_IMAGES:-false}
       LOAD_TEMPLATES: ${LOAD_TEMPLATES:-true}
@@ -754,6 +741,8 @@ services:
       # not reference, so every search_in_a_register call failed with
       # NoSuchBucket and the register list rendered empty.
       IMAGE_BUCKET_NAME: documents
+    volumes:
+      - ${OPENG2P_DATA_PATH:-./docker/local-dev/openg2p-data-local}:/openg2p-data-local:ro
     restart: "no"
 
   # LOCAL DEVELOPMENT ONLY (docker/local-dev/data-loaders; not a deployable
@@ -762,35 +751,6 @@ services:
   # the db-seed job has applied the metadata. Set LOAD_SAMPLE_DATA=false to
   # skip the load. The loader is on its way to openg2p-data:
   # docs/refactor/moves-to-openg2p-data/README.md.
-  da-registry-sample-data:
-    build:
-      context: .
-      dockerfile: docker/local-dev/data-loaders/Dockerfile
-      args:
-        OPENG2P_DATA_REF: ${OPENG2P_DATA_REF:-dc7e7bf69087b4684a3608fdd4bf98100aab77a8}
-    image: da-registry-local/data-loaders:dev
-    container_name: da-registry-sample-data
-    depends_on:
-      da-registry-db-seed:
-        condition: service_completed_successfully
-    environment:
-      PGHOST: postgres
-      PGPORT: 5432
-      PGDATABASE: da_registry_db
-      PGUSER: ${POSTGRES_SUPERUSER:-postgres}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      MD_PGHOST: postgres
-      MD_PGPORT: 5432
-      MD_PGDATABASE: da_master_data_db
-      MD_PGUSER: ${POSTGRES_SUPERUSER:-postgres}
-      MD_PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      OPENG2P_DATA_DIR: ${OPENG2P_DATA_DIR:-/openg2p-data}
-      PACK: ${OPENG2P_DATA_PACK:-ETH-OAN}
-    volumes:
-      - ${OPENG2P_DATA_PATH:-./docker/local-dev/openg2p-data-local}:/openg2p-data-local:ro
-    entrypoint: ["sh", "-c", "if [ \"${LOAD_SAMPLE_DATA:-true}\" = true ]; then exec python3 /local/load_sample_data.py; fi"]
-    restart: "no"
-
 volumes:
   postgres-data:
   minio-data:

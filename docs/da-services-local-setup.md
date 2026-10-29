@@ -22,9 +22,10 @@ and takes 5–10 minutes. It is ready when the staff API answers:
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8101/docs   # 200
 ```
 
-The seed loads the Ethiopia geo hierarchy, the dropdown code lists and
-**nine sample DAs** from the openg2p-data pack (`packs/ETH-OAN`), all approved
-and active, with DA-IDs `DA-3700000001` to `DA-3700000009`. No real personal
+The seed loads the Ethiopia geo hierarchy and the dropdown code lists, and
+submits the **sample DAs** of the openg2p-data pack (`packs/ETH-OAN`) through the
+intake form; they wait for approval (stage 1 `alex.carter` or `admin`, stage 2
+`nina.patel` or `admin`) and get their DA-ID when approved. No real personal
 data is used.
 
 Stop with `docker compose stop`; `docker compose down -v` also deletes the data.

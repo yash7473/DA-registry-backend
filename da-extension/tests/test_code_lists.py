@@ -50,53 +50,26 @@ class TestResolve(unittest.TestCase):
     def test_uncoded_field_passes_through(self):
         self.assertEqual(cl.resolve_code("first_name", " Abebe ", self.session), "Abebe")
 
-    def test_read_mode(self):
-        with mock.patch.dict("os.environ", {cl.ENV_PREFIX + "READ_MODE": "", cl.ENV_PREFIX + "DB_HOSTNAME": "postgres"}):
-            self.assertEqual(cl._read_mode(), "db")
-        with mock.patch.dict("os.environ", {cl.ENV_PREFIX + "READ_MODE": "", cl.ENV_PREFIX + "DB_HOSTNAME": ""}):
-            self.assertEqual(cl._read_mode(), "api")
-        with mock.patch.dict("os.environ", {cl.ENV_PREFIX + "READ_MODE": "api", cl.ENV_PREFIX + "DB_HOSTNAME": "postgres"}):
-            self.assertEqual(cl._read_mode(), "api")
+class TestApiRead(unittest.TestCase):
+    """A list is read from the Master Data API, never from its database."""
 
-
-class TestDbRead(unittest.TestCase):
-    """Reading a list straight from the Master Data DB, with and without the
-    translations column (Master Data versions differ)."""
-
-    def _cursor(self, has_column):
-        cur = mock.MagicMock()
-        executed = []
-
-        def execute(sql, params=None):
-            executed.append(sql)
-            cur._last = sql
-        cur.execute.side_effect = execute
-        cur.fetchone.side_effect = lambda: (1,) if has_column else None
-        cur.fetchall.return_value = [("SENIOR_DA", "SENIOR_DA", "Senior DA", {"am": "x"} if has_column else None)]
-        cur.__enter__.return_value = cur
-        return cur, executed
-
-    def _read(self, has_column):
+    def setUp(self):
         cl.invalidate()
-        cur, executed = self._cursor(has_column)
-        conn = mock.Mock(); conn.cursor.return_value = cur
-        from openg2p_registry_da_extension.ingestion_pipeline.enricher_services import g2p_da_enricher_services as enr
-        with mock.patch.object(enr._MasterDataGeo, "_connection", return_value=conn):
-            values = cl._values_from_db("DA_POSITION")
-        cl.invalidate()
-        return values, executed
+        self.addCleanup(cl.invalidate)
 
-    def test_with_translations_column(self):
-        values, executed = self._read(True)
-        self.assertIn("display_name_i18n from g2p_attribute_values", executed[-1])
+    def test_values_codes_and_translations_from_the_api(self):
+        payload = {"attribute_values": [
+            {"value_id": "SENIOR_DA", "value_code": "SENIOR_DA", "value_display": "Senior DA", "display_i18n": {"am": "x"}},
+            {"value_id": "DA", "value_code": "DEV_AGENT", "value_display": "Development Agent"},
+        ]}
+        with mock.patch.object(cl.master_data_api, "post", return_value=payload) as post:
+            values = cl.attribute_values("DA_POSITION")
+            cl.attribute_values("DA_POSITION")  # cached
+        post.assert_called_once_with("/attributes/get_attribute_values", {"attribute_id": "DA_POSITION"},
+                                     {"current_page": 1, "page_size": 1000})
         self.assertEqual(values["SENIOR_DA"], "Senior DA")
-
-    def test_without_translations_column(self):
-        values, executed = self._read(False)
-        self.assertNotIn("display_name_i18n from", executed[-1])
-        self.assertIn("null from g2p_attribute_values", executed[-1])
-        self.assertEqual(values["SENIOR_DA"], "Senior DA")
-        self.assertEqual(values["__i18n__SENIOR_DA"], "{}")
+        self.assertEqual(values["__i18n__SENIOR_DA"], '{"am": "x"}')
+        self.assertEqual(values["__code__DEV_AGENT"], "DA")
 
 
 if __name__ == "__main__":
