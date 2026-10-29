@@ -56,7 +56,7 @@ Content-Type: application/json
       "first_name": "Frehiwot",
       "father_name": "Assefa",
       "grandfather_name": "Bekele",
-      "fayda_id": "804512345601",
+      "fayda_id": "9311804512345601",
       "gender": "Female",
       "marital_status": "Married",
       "birth_month_ec": 6,
@@ -180,7 +180,7 @@ Content-Type: application/json
         "version": "1.0.0", "reg_type": "DA", "reg_record_type": "DA",
         "query_type": "expression",
         "query": {"type": "expression",
-                  "value": {"expression": {"query": {"search_text": {"$eq": "804512345601"}}}}}
+                  "value": {"expression": {"query": {"search_text": {"$eq": "9311804512345601"}}}}}
       }
     }]
   }
@@ -192,7 +192,7 @@ Content-Type: application/json
 
 ```json
 {
-  "da_id": "DA-6453519520", "internal_record_id": "…", "fayda_id": "804512345601",
+  "da_id": "DA-6453519520", "internal_record_id": "…", "fayda_id": "9311804512345601",
   "name": {"salutation": "DR", "given_name": "Frehiwot", "father_name": "Assefa",
            "grandfather_name": "Bekele", "full_name": "Frehiwot Assefa Bekele"},
   "sex": "female", "marital_status": "MARRIED", "birth_month_ec": 6, "birth_year_ec": 1986,
@@ -378,7 +378,7 @@ imported in the registry portal. All filters are optional:
       "source": "file_import",
       "correlation_id": "0d9ad8dfee1a4efe956a1ca69be39d0f",
       "reference_id": null,
-      "fayda_id": "412345678901",
+      "fayda_id": "9311412345678901",
       "name": "Abebe Kebede",
       "state": "EXCEPTION",
       "reason": "Location 'Nowhere' not found in Master Data",
@@ -391,7 +391,7 @@ imported in the registry portal. All filters are optional:
       "source": "da_services",
       "correlation_id": "24507f2839fe49c8946a6d80b94c4ea7",
       "reference_id": "FR-DA-0001",
-      "fayda_id": "804512345611",
+      "fayda_id": "9311804512345611",
       "name": "Tesfaye Bekele",
       "state": "EXCEPTION",
       "reason": "Fayda ID 804512345611 is already registered as DA-5891503619.",
