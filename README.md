@@ -69,12 +69,11 @@ no role approves a submission or a change request directly: the staff
 endpoints that would do so answer `AWE_APPROVAL_REQUIRED`
 (`register_domain/services/direct_approval.py`); only the approval task decides.
 
-A Development Agent's own record (`register_domain/services/da_own_record.py`):
-a token with the claim `da_id` (Keycloak user attribute, client scope
-`da-self-service`) whose only registry roles are the Development Agent ones is
-limited to that one DA record: search, details, tab records and change-request
-reads see only it, and a change request may target only it and only the
-contact, service and location sections. See `docs/rbac-registry-roles.md` §5.
+A Development Agent's own profile: a DA signs in to DA Services, not to the
+registry. DA Services calls the staff API with its service account (role Data
+Editor), finds the DA by DA-ID and lets them change only their own contact,
+service and location details; the change request takes the normal two-stage
+approval. See `docs/rbac-registry-roles.md` §5.
 
 One DA per Fayda ID (`register_domain/services/fayda_uniqueness.py`): every save
 of a DA record (web form, file import, DA Services push, change request) is
@@ -198,7 +197,6 @@ registries. Keep the component Dockerfiles and chart dependency in step:
 
 When the version moves, re-check:
 
-- `da-extension/.../register_domain/temporary_platform_overrides.py`: the two
-  temporary in-process workarounds (IAM permission lookup across registries,
-  DataPolicyMiddleware own-record policy); the platform image is not modified. Drop each one once
+- `da-extension/.../register_domain/temporary_platform_overrides.py`: the one
+  temporary in-process workaround (IAM permission lookup across registries); the platform image is not modified. Drop each one once
   OpenG2P fixes it in the pinned platform image.

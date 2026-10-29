@@ -66,10 +66,3 @@ def test_permission_lookup_is_scoped_to_this_application(monkeypatch):
     assert calls["headers"] == {"Authorization": "Bearer tok-123"}
 
 
-def test_data_policy_middleware_applies_the_own_record_policy():
-    pytest.importorskip("iam_core")
-    from iam_core.user_auth.middleware.data_policy import DataPolicyMiddleware
-
-    assert po.install_own_record_data_policy() is True
-    assert po.install_own_record_data_policy() is True  # idempotent
-    assert getattr(DataPolicyMiddleware.dispatch, po._INSTALLED) is True

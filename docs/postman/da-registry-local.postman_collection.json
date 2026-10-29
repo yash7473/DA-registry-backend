@@ -8,7 +8,7 @@
   "item": [
     {
       "name": "0. Login",
-      "description": "Run ONE of the two options before anything else.\n\nDEV (deployed): send 0-dev-a, 0-dev-b, 0-dev-c in order (or right-click the folder > Run). They do the same browser sign-in the Staff Portal does (Keycloak form -> IAM callback) and save token + csrf into the environment. The token lives 5 minutes: when a request answers G2P-AUT-401, run the three again. Needs `username` and `password` in the dev environment (password is a secret field, type it in Postman, do not commit it).\n\nLOCAL: send 0-local only (direct Keycloak token with admin/admin).\n\n0-local-da: token of a Development Agent test user, to see the own-record rule (section 5 of docs/rbac-registry-roles.md).\n\nThree demo users for the two-level approval (local): 0-local-officer enters the DA, 0-local-validator approves Stage 1, 0-local-approver approves Stage 2. Switch the token by sending the matching request before each step.",
+      "description": "Run ONE of the two options before anything else.\n\nDEV (deployed): send 0-dev-a, 0-dev-b, 0-dev-c in order (or right-click the folder > Run). They do the same browser sign-in the Staff Portal does (Keycloak form -> IAM callback) and save token + csrf into the environment. The token lives 5 minutes: when a request answers G2P-AUT-401, run the three again. Needs `username` and `password` in the dev environment (password is a secret field, type it in Postman, do not commit it).\n\nLOCAL: send 0-local only (direct Keycloak token with admin/admin).\n\nThree demo users for the two-level approval (local): 0-local-officer enters the DA, 0-local-validator approves Stage 1, 0-local-approver approves Stage 2. Switch the token by sending the matching request before each step.",
       "item": [
         {
           "name": "0-dev-a. Open the sign-in page",
@@ -194,71 +194,6 @@
               ]
             },
             "description": "LOCAL ONLY. Direct password grant on the local Keycloak. On dev this is not allowed (the staff-portal client is browser-only), use 0-dev-a/b/c instead."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "function setVar(k, v) { pm.collectionVariables.set(k, v); if (pm.environment.name) pm.environment.set(k, v); }",
-                  "const r = pm.response.json();",
-                  "const v = r.access_token;",
-                  "if (v) setVar('token', v);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "0-local-da. Get token as a DA (da.test, own record only)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
-            "url": {
-              "raw": "{{keycloak}}/realms/staff/protocol/openid-connect/token",
-              "host": [
-                "{{keycloak}}"
-              ],
-              "path": [
-                "realms",
-                "staff",
-                "protocol",
-                "openid-connect",
-                "token"
-              ]
-            },
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "iam-staff-portal"
-                },
-                {
-                  "key": "client_secret",
-                  "value": "dev-iam-staff-secret"
-                },
-                {
-                  "key": "username",
-                  "value": "da.test"
-                },
-                {
-                  "key": "password",
-                  "value": "pass"
-                }
-              ]
-            },
-            "description": "LOCAL ONLY. Token of the test DA user da.test (role Data Editor, Keycloak attribute da_id = their DA-ID). With this token: 13 returns only that DA, 11/14 work only on it (other records: REG-ERR-012), 14 is refused on the identity section. Create the user first (see docs/rbac-registry-roles.md section 5; the local test script sets attribute da_id and the role)."
           },
           "event": [
             {

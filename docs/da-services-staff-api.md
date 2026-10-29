@@ -544,8 +544,17 @@ request_payload: {"change_request_id": "9e68d3a3-8f56-496b-85c0-da4177ae3e6e"}
 (`approval_status`: `PENDING`, `APPROVED` or `REJECTED`, with `approved_by`.)
 
 Do not use `/change-requests/approve_change_request` or `reject_change_request`
-directly: they change the register but leave the AWE task open, and that task
-can then no longer be decided.
+directly: the registry refuses them (`AWE_APPROVAL_REQUIRED`); only the
+approval task decides.
+
+### 5.1 A DA editing their own profile
+
+A Development Agent signs in to DA Services, not to the registry. DA Services
+makes the calls above with its **service account** (client credentials, role
+Data Editor), finds the DA by their DA-ID, and lets them change only their own
+record and only the contact, service and location sections. The steps, the
+Keycloak client and what DA Services must enforce are in
+`docs/rbac-registry-roles.md` section 5.
 
 ---
 

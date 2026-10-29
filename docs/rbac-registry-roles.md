@@ -77,9 +77,11 @@ was scoped to Woreda ET010101 and the Executive to Region ET04.
 
 ## 4. Limits and open points
 
-- **A Development Agent sees only their own record** when their token carries
-  the claim `da_id` (section 5). Without that claim a Development Agent can
-  read every DA; use the claim, or a narrow data policy.
+- **A Development Agent does not sign in to the registry.** DA Services
+  serves a DA their own profile through its service account (section 5). The
+  `DA Services - Development Agent` group is for staff who act as a DA in the
+  registry portal, not for the DAs themselves; a DA user with only Data
+  Editor would see every DA.
 - **Login:** these roles work with a staff Keycloak token. How DA Services
   users sign in (OAN auth service or Keycloak) is still open.
 - **Approver routing:** who approves a Woreda's submissions is the approval
@@ -87,39 +89,46 @@ was scoped to Woreda ET010101 and the Executive to Region ET04.
 - A Woreda code is unique, but Woreda names are not (23 names repeat). Always
   scope by code.
 
-## 5. A Development Agent's own record (self-service)
+## 5. A Development Agent's own profile (self-service through DA Services)
 
-A DA signs in to DA Services (or the registry portal) with their own Keycloak
-user and may read and change only their own DA record. This is enforced in the
-registry's staff API (`register_domain/services/da_own_record.py`), so it holds
-for DA Services, the registry portal and any direct API call alike:
+Requirement (Shikha, 7 Oct 2026): a DA may update their own profile; the change
+is approved in the registry by the same approval as any other. Architecture
+(Faiz, 7 Oct 2026): DA Services wraps the registry's staff API, it does not
+copy the data.
 
-- The Keycloak user carries the attribute `da_id` = the DA's DA-ID
-  (for example `DA-4374521939`). The client scope `da-self-service` maps it
-  into the access token as the claim `da_id` (local: `keycloak-init.sh`; on a
-  shared Keycloak: create the scope with a *User Attribute* mapper
-  `da_id -> da_id`, make it a default scope of the clients a DA signs in with,
-  and set the realm's user profile *unmanaged attributes* to `Admin can edit`).
-- When the token has `da_id` and the user's only roles on
-  `da-registry-staff-portal` are the Development Agent ones (`Data Editor`,
-  plus any `DP_` data-policy role), the request's data policies are replaced
-  by one ALLOW policy `functional_record_id = <da_id>` on the DA register.
-  DA search, DA details, tab records and change-request reads then return
-  only that record; any other record answers `REG-ERR-012 RECORD_ACCESS_DENIED`.
-- `create_change_request` is checked separately (the platform does not put it
-  under data policies): the change must target the DA's own record and one
-  of the sections contact (`da_contact_section_04`), service
-  (`da_service_section_02`) or location (`da_location_section_03`). The
-  identity section (name, Fayda ID) answers `REG-ERR-012`.
-- The DA's change request goes through the same two-level approval as any
-  other; the DA cannot approve it.
-- A user with any wider role (Intake Officer, Validator, Supervisor,
-  Operations Administrator, ...) is not restricted by this rule, whatever
-  claims the token has.
+A DA signs in to **DA Services only**, never to the registry. DA Services
+knows which DA the signed-in user is (its own user ↔ DA-ID mapping) and calls
+the registry **server to server with its service account**:
 
-Local test (26 Oct 2026): user `da.test` (Data Editor, `da_id` DA-4374521939)
-saw 1 of 50 DAs, read and changed only its own contact section, was refused
-on another record and on its identity section; `admin` was unchanged.
+| Step | Staff API call | Note |
+|---|---|---|
+| Find the DA | `POST /register-data/search_in_a_register` with `search_text` = the DA-ID | keep only the item whose `functional_record_id` equals the DA-ID (`search_text` is partial) |
+| Show the profile | `POST /register-data/get_tab_records` (`da_details_tab`) | |
+| Request a change | `POST /change-requests/create_change_request` on that record | DA Services allows only the contact (`da_contact_section_04`), service (`da_service_section_02`) and location (`da_location_section_03`) sections; never identity (name, Fayda ID) |
+| Show the status | `POST /change-requests/get_change_request` | `PENDING` until both approval stages decide |
 
-Settings: `DA_SELF_SERVICE_CLAIM` (default `da_id`),
-`DA_SELF_SERVICE_CLIENT_ID` (default `da-registry-staff-portal`).
+- **Service account:** a confidential Keycloak client in realm `staff` with
+  service accounts on (local: `da-services-backend`, secret
+  `dev-da-services-secret`, created by `keycloak-init.sh`); its service-account
+  user gets the client role `Data Editor` on `da-registry-staff-portal`
+  (view the register, create and view change requests, nothing else; it cannot
+  approve). Token: `POST /realms/staff/protocol/openid-connect/token` with
+  `grant_type=client_credentials`.
+- **Who may see or change which record is DA Services' rule**, not the
+  registry's: the registry trusts the service account, so DA Services must
+  never pass a DA-ID the signed-in user does not own. The registry records the
+  change request as created by the service (`created_by`), so DA Services keeps
+  its own log of which DA asked.
+- **Approval** is unchanged: two stages in the approval workflow, approvers as
+  configured in AWE (section 2). The DA cannot approve their own change.
+
+Verified locally (29 Oct 2026, `da_services_selfservice_probe.py`): the
+service-account token found one DA by DA-ID, read its details tab, created a
+phone change request; admin approved stage 1 and stage 2; the register showed
+the new phone number.
+
+Earlier design, removed on 29 Oct 2026: the DA signed in to the registry with a
+Keycloak attribute `da_id` and the registry limited that token to one record
+through an override of the platform's data-policy middleware. It needed a
+platform override and a Keycloak scope per realm; enforcing it in DA Services
+needs neither.
