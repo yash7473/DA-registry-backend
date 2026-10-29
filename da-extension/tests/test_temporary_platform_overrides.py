@@ -66,27 +66,6 @@ def test_permission_lookup_is_scoped_to_this_application(monkeypatch):
     assert calls["headers"] == {"Authorization": "Bearer tok-123"}
 
 
-def test_worker_engine_uses_null_pool(monkeypatch):
-    pytest.importorskip("openg2p_registry_celery_worker")
-    from sqlalchemy.pool import NullPool
-    from openg2p_registry_celery_worker.engine import Engine
-
-    assert po.install_worker_null_pool() is True
-    assert po.install_worker_null_pool() is True  # idempotent
-    seen = {}
-    monkeypatch.setattr(Engine, "_async_engine", None)
-    monkeypatch.setattr(Engine, "construct_async_db_datasource", staticmethod(lambda: "postgresql+asyncpg://u:p@db/x"))
-    monkeypatch.setattr(po, "install_worker_null_pool", po.install_worker_null_pool)
-    import openg2p_registry_da_extension.register_domain.temporary_platform_overrides as module
-    monkeypatch.setattr("sqlalchemy.ext.asyncio.create_async_engine", lambda ds, **kw: seen.update(ds=ds, **kw) or "engine")
-    # the override captured create_async_engine at install time; re-install against the patched symbol
-    Engine.get_async_engine = Engine.get_async_engine.__func__ if hasattr(Engine.get_async_engine, "__func__") else Engine.get_async_engine
-    delattr(Engine.get_async_engine, po._INSTALLED) if hasattr(Engine.get_async_engine, po._INSTALLED) else None
-    assert module.install_worker_null_pool() is True
-    assert Engine.get_async_engine() == "engine"
-    assert seen["poolclass"] is NullPool
-
-
 def test_data_policy_middleware_applies_the_own_record_policy():
     pytest.importorskip("iam_core")
     from iam_core.user_auth.middleware.data_policy import DataPolicyMiddleware

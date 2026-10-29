@@ -8,9 +8,12 @@ are untouched. Every override is idempotent and skips cleanly when the platform
 package it targets is not in the process. Remove each one when OpenG2P fixes
 it; docs/refactor/platform-overrides.md lists them with the re-check steps.
 
-A fourth override (FilterBuilder accepting "true"/"false" strings) was removed
-on 29 Oct 2026: no DA filter is boolean (register metadata and the platform
-define none), so it never applied.
+Removed on 29 Oct 2026: FilterBuilder accepting "true"/"false" strings (no DA
+filter is boolean, so it never applied) and the celery worker NullPool engine
+(a 12-row import measured the same with and without it: all rows in approval
+in ~116 s, two "attached to a different loop" errors that the platform
+retries, one retried task failure; the error comes from elsewhere in the
+platform and is reported upstream instead).
 
 Everything else this extension changes in the platform goes through the
 component registry (subclass registered ahead of the platform service); this
@@ -27,19 +30,7 @@ module is the only place that reassigns platform methods.
    Without it: users get another registry's permissions (too many or too few).
    Remove when OpenG2P fixes it.
 
-2. Celery worker database engine - install_worker_null_pool
-   Bug: one pooled async engine per process, but each task module runs on its
-   own event loop; asyncpg binds a connection to the loop it was opened on, so
-   a pooled connection handed from one task type to another fails with
-   "attached to a different loop" and valid records get stuck behind an invalid
-   one. The platform exposes pool size settings but no NullPool setting. The
-   override opens a fresh connection per session.
-   Platform version checked: 1.2.2-rc.557 (the error still shows on first
-   attempts there; rows are retried and complete).
-   Without it: imports stall or fail more often on that error.
-   Remove when OpenG2P fixes it.
-
-3. DataPolicyMiddleware own-record policy - install_own_record_data_policy
+2. DataPolicyMiddleware own-record policy - install_own_record_data_policy
    Gap: the platform's data policies are role-based lists; there is no
    per-user, claim-based policy. For a Development Agent (token claim `da_id`,
    only the Data Editor role) the override replaces the request's policies with
@@ -128,35 +119,7 @@ def install_scoped_permission_lookup() -> bool:
     return True
 
 
-# ----------------------------------------------------------------- 2. worker
-
-
-def install_worker_null_pool() -> bool:
-    try:
-        from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.pool import NullPool
-        from openg2p_registry_celery_worker.engine import Engine
-    except ImportError:
-        return False
-    if getattr(Engine.get_async_engine, _INSTALLED, False):
-        return True
-
-    def get_async_engine():
-        if Engine._async_engine is None:
-            datasource = Engine.construct_async_db_datasource()
-            try:
-                Engine._async_engine = create_async_engine(datasource, poolclass=NullPool)
-            except Exception as e:  # same message as the platform's
-                raise ValueError(f"Invalid DB datasource: {datasource} | ERROR: {e}")
-        return Engine._async_engine
-
-    setattr(get_async_engine, _INSTALLED, True)
-    Engine.get_async_engine = staticmethod(get_async_engine)
-    _logger.info("Celery worker async engine uses NullPool (platform event-loop fix)")
-    return True
-
-
-# ------------------------------------------------- 3. own-record data policy
+# ------------------------------------------------- 2. own-record data policy
 
 
 def install_own_record_data_policy() -> bool:
@@ -189,5 +152,4 @@ def install_own_record_data_policy() -> bool:
 
 def install_temporary_platform_overrides() -> None:
     install_scoped_permission_lookup()
-    install_worker_null_pool()
     install_own_record_data_policy()
